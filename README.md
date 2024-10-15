@@ -1,7 +1,7 @@
 # Catalyst-F12-1200231
 Catalyst Fund12 #1200231 Milestones
 
-## Milestone1 Commit (2024/10/16)
+## Milestone-1
 [ M1 Document Research 1-a (PDF Link) ](./Document/M1_Resources_eng_00_ALL.pdf)  
 [ M1 Document Research 1-b (PDF Link) ](./Document/M1_Resources_eng_01_R1a.pdf)  
 [ M1 Document Research 2-a (PDF Link) ](./Document/M1_Resources_eng_02_R1b.pdf)  
