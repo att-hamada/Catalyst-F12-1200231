@@ -23,8 +23,9 @@ Catalyst Fund12 #1200231 Milestones
 #### 2-pg : Certificate IPDC transmission support tool (project and source code)
  [ ■PDF Link of 2-pg ](./DocumentM2/M2_Develop_src_2_Certificate_IPDC_transmission_support_tool)  
 #### 2-v : Certificate IPDC transmission support tool (video)
- [ ■PDF Link of 2-v ](./DocumentM2/M2_Movie_2_Certificate_IPDC_transmission_support_tool.mp4)  
-
+ [ ■PDF Link of 2-v ](./DocumentM2/M2_Movie_2_Certificate_IPDC_transmission_support_tool.mp4)    
+  
+=====  
 
 ## Milestone-1 Research and Prototype Verification
  [ ■PDF Link of all document ](./Document/M1_Resources_eng_00_ALL.pdf) 
