@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Certificate issuing tool</title>
+</head>
+<body>
+<h1>Certificate issuing tool<h1>
+<textarea id="metadataInput" rows="37" cols="100">
+{
+  "@context": [
+    "https://www.w3.org/2018/credentials/v1"
+  ],
+  "id": "urn:uuid:12345-67890",
+  "type": ["VerifiableCredential", "DisasterReliefVolunteerCredential"],
+  "issuer": {
+    "id": "https://disaster-response-headquarters.example.org",
+    "name": "Disaster Response Headquarters"
+  },
+  "issuanceDate": "2024-11-03T00:00:00Z",
+  "credentialSubject": {
+    "id": "did:example:volunteer-001",
+    "name": "John Doe",
+    "role": "Heavy Machinery Operator",
+    "skills": [
+      "Excavator Operation",
+      "Bulldozer Operation",
+      "Crisis Communication"
+    ],
+    "certifications": [
+      {
+        "type": "HeavyMachineryCertification",
+        "issuedBy": "Local Training Institute",
+        "issueDate": "2023-05-01"
+      }
+    ],
+    "authorizedRegions": [
+      {
+        "region": "Prefecture A, City B",
+        "validUntil": "2024-12-31"
+      }
+    ]
+  }
+}</textarea><br>
+	<button id="submitBtn">Submit Transaction</button><br>
+	<button id="vc_download" disabled>Download Certificate</button> <br>
+<div id="linkContainer"></div>
+
+<script>
+
+
+let CardanoWasm;
+let Buffer
+
+const privateKeyHex = "28c139178b045970ccccbac02450dff1315103405e7f27439600a7c726ae0746aefc8179df38da91772378be9ba60d2e25984874b956c543027822b91433ffeb";
+//const projectId = ""; //提出前にここは消す。
+const projectId = "YOUR PROJECT ID";
+const apiBase = "https://cardano-preprod.blockfrost.io/api/v0";
+const vcDownload  = document.getElementById('vc_download');
+
+(async () => {
+
+
+
+// Bufferポリフィルのロード
+const bufferScript = document.createElement('script');
+bufferScript.src = 'buffer@6.0.3.js';
+document.head.appendChild(bufferScript);
+await new Promise(resolve => bufferScript.onload = resolve);
+Buffer = window.buffer.Buffer;
+
+CardanoWasm = await import('./cardano_serialization_lib.js');
+await import('./sha3.min.js');
+
+// トランザクション送信用のボタンのクリックイベントを設定
+document.getElementById('submitBtn').addEventListener('click', async () => {
+	try {
+		const privateKey = CardanoWasm.PrivateKey.from_extended_bytes(Buffer.from(privateKeyHex, 'hex'));
+		const generatedPublicKey = privateKey.to_public();
+		const address = CardanoWasm.BaseAddress.new(
+			0, // Testnet = 0, Mainnet = 1
+			CardanoWasm.Credential.from_keyhash(generatedPublicKey.hash()),
+			CardanoWasm.Credential.from_keyhash(generatedPublicKey.hash())
+		).to_address().to_bech32();
+
+		console.log("address:", address);
+
+		const maxUTXO = await getMaxUTXO(address);
+		const protocolParams = await getProtocolParameters();
+
+		const txHash = maxUTXO.txHash;
+		const txIndex = maxUTXO.txIndex;
+		const utxoAmount = parseInt(maxUTXO.amount);
+		const fee = 200000; // 手数料 (Lovelace)
+		const sendAmount = utxoAmount - fee; // 送金額（手数料を引いた額）
+		const txBuilder = CardanoWasm.TransactionBuilder.new(protocolParams);
+
+		const keyHash = generatedPublicKey.hash();
+		txBuilder.add_key_input(
+			CardanoWasm.Ed25519KeyHash.from_bytes(keyHash.to_bytes()),
+			CardanoWasm.TransactionInput.new(
+				CardanoWasm.TransactionHash.from_bytes(Buffer.from(txHash, "hex")),
+				txIndex
+			),
+			CardanoWasm.Value.new(CardanoWasm.BigNum.from_str(utxoAmount.toString()))
+		);
+
+		txBuilder.add_output(
+			CardanoWasm.TransactionOutput.new(
+				CardanoWasm.Address.from_bech32(address),
+				CardanoWasm.Value.new(CardanoWasm.BigNum.from_str(sendAmount.toString()))
+			)
+		);
+
+		txBuilder.set_fee(CardanoWasm.BigNum.from_str(fee.toString()));
+
+		// メタデータの設定
+		const auxiliaryData = CardanoWasm.AuxiliaryData.new();
+		const metadata = CardanoWasm.GeneralTransactionMetadata.new();
+		const metadataInput = document.getElementById('metadataInput').value;
+		metadata.insert(
+			CardanoWasm.BigNum.from_str("721"),
+			CardanoWasm.encode_json_str_to_metadatum(metadataInput)
+		);
+		auxiliaryData.set_metadata(metadata);
+		txBuilder.set_auxiliary_data(auxiliaryData);
+
+		const txBody = txBuilder.build();
+		const txHex = CardanoWasm.hash_transaction(txBody);
+		const witnessSet = CardanoWasm.TransactionWitnessSet.new();
+		const vkeys = CardanoWasm.Vkeywitnesses.new();
+		vkeys.add(CardanoWasm.Vkeywitness.new(
+			CardanoWasm.Vkey.new(privateKey.to_public()),
+			privateKey.sign(txHex.to_bytes())
+		));
+		witnessSet.set_vkeys(vkeys);
+
+		const signedTx = CardanoWasm.Transaction.new(txBody, witnessSet, auxiliaryData);
+
+		// トランザクションのシリアライズ
+		const signedTxHex = Buffer.from(signedTx.to_bytes()).toString('hex');
+		console.log("Signed Transaction (Hex):", signedTxHex);
+
+		// トランザクションの送信
+		const response = await fetch('http://medialabo.ktv.jp:1337/submit', {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json'
+			},
+			body: JSON.stringify({ payload: signedTxHex })
+		});
+
+		const result = await response.json();
+		console.log('Response:', result);
+
+		// 新たに追加されたブロック情報を取得
+		const transactionId = result.data; // トランザクションIDを取得
+		await fetchBlockInfo(transactionId,signedTxHex); // ブロック情報を取得
+
+	} catch (error) {
+		console.error('Error:', error);
+	}
+});
+
+// ブロック情報を取得
+// トランザクションIDからブロック情報を取得し、データが入るまでリトライする関数
+async function fetchBlockInfo(transactionId,signedTxHex) {
+	let height = 0;
+
+	while (true) {
+		try {
+			const response = await fetch(`${apiBase}/txs/${transactionId}`, {
+				method: 'GET',
+				headers: {
+					'project_id': projectId
+				}
+			});
+
+			if (response.status === 200) {
+				const blockInfo = await response.json();
+				height = blockInfo.block_height;
+				console.log('Block information:', blockInfo);
+
+				// エクスプローラーリンクを生成
+				const explorerLink = document.createElement("a");
+				explorerLink.href = `https://preprod.cardanoscan.io/transaction/${transactionId}`;
+				explorerLink.textContent = "View Transaction on Cardanoscan";
+				explorerLink.target = "_blank"; // 新しいタブで開く
+				explorerLink.style.display = "block"; // 表示のためのスタイル
+
+				// 表示する場所を指定 (例: idが "linkContainer" の要素内に追加)
+				document.getElementById("linkContainer").appendChild(explorerLink);
+
+
+				break; // データが取得できたらループを抜ける
+			} else if (response.status === 404) {
+				console.log('Transaction not found yet, retrying...');
+			} else {
+				const error = await response.text();
+				console.error('Unexpected error fetching block information:', error);
+			}
+		} catch (error) {
+			console.error('Error fetching block information:', error);
+		}
+
+		// 少し待ってから再試行（ここでは1秒待機）
+		await new Promise(resolve => setTimeout(resolve, 10000));
+	}
+
+	// ブロックのトランザクション取得
+	let transactions = await fetchBlockTransactions(height);
+	console.log('Block Transactions:', transactions);
+
+	// トランザクションのハッシュ計算
+	const transactionHashes = getTransactionHashes(transactions);
+	console.log('Transaction Hashes (SHA3-256):', transactionHashes);
+
+	// マークルツリーを構築
+	const tree = buildMerkleTree(transactionHashes);
+	console.log('Merkle Tree:', tree);
+
+	// 特定トランザクションのマークルパスを計算
+	const targetHash = sha3_256(new TextEncoder().encode(transactionId));
+	const hexTargetHash = Array.from(targetHash).map(b => b.toString(16).padStart(2, '0')).join('');
+	const path = findPath(tree, hexTargetHash);
+	console.log('Merkle Path:', path);
+
+	// 期待されるマークルルート（ツリーの最上位）
+	const expectedRoot = tree[tree.length - 1][0];	// ツリーの最上位の要素をルートとする
+
+	// マークルルートへのパスを検証
+	const isValid = verifyMerklePath(hexTargetHash, path, expectedRoot);
+	console.log('Is the leaf hash valid in the Merkle tree?', isValid);
+
+	//資格証明書ダウンロード準備
+	const data = {
+		height:height,
+		payload:signedTxHex,
+		merkle:path
+	}
+
+	vcDownload.disabled = false;
+	vcDownload.addEventListener("click", () => {
+		downloadData(JSON.stringify(data, null, '  '),"vc.json");
+	});
+}
+
+
+async function fetchBlockTransactions(height) {
+	try {
+		const response = await fetch(`${apiBase}/blocks/${height}/txs`, {
+			method: 'GET',
+			headers: { 'project_id': projectId }
+		});
+
+		if (response.ok) {
+			return await response.json();
+		} else {
+			const error = await response.text();
+			console.error('Error fetching block transactions:', error);
+			return [];
+		}
+	} catch (error) {
+		console.error('Error:', error);
+		return [];
+	}
+}
+
+
+
+async function getMaxUTXO(address) {
+	try {
+		const response = await fetch(`${apiBase}/addresses/${address}/utxos`, {
+			headers: { 'project_id': projectId }
+		});
+		if (!response.ok) {
+			throw new Error('Network response was not ok');
+		}
+		const utxos = await response.json();
+		if (utxos.length === 0) {
+			throw new Error("No UTXOs found for this address.");
+		}
+
+		// 最大のUTXOを選択
+		let maxUTXO = utxos[0];
+		utxos.forEach(utxo => {
+			if (parseInt(utxo.amount[0].quantity) > parseInt(maxUTXO.amount[0].quantity)) {
+				maxUTXO = utxo;
+			}
+		});
+
+		console.log(maxUTXO);
+		return {
+			txHash: maxUTXO.tx_hash,
+			txIndex: maxUTXO.tx_index,
+			amount: maxUTXO.amount[0].quantity
+		};
+	} catch (error) {
+		console.error('Error fetching UTXOs:', error);
+		throw error;
+	}
+}
+
+async function getProtocolParameters() {
+	try {
+		const response = await fetch(`${apiBase}/epochs/latest/parameters`, {
+			headers: { 'project_id': projectId }
+		});
+		if (!response.ok) {
+			throw new Error('Network response was not ok');
+		}
+		const data = await response.json();
+
+		const linearFee = CardanoWasm.LinearFee.new(
+			CardanoWasm.BigNum.from_str(data.min_fee_a.toString()),
+			CardanoWasm.BigNum.from_str(data.min_fee_b.toString())
+		);
+
+		return CardanoWasm.TransactionBuilderConfigBuilder.new()
+			.fee_algo(linearFee)
+			.pool_deposit(CardanoWasm.BigNum.from_str(data.pool_deposit))
+			.key_deposit(CardanoWasm.BigNum.from_str(data.key_deposit))
+			.max_value_size(data.max_val_size)
+			.max_tx_size(data.max_tx_size)
+			.coins_per_utxo_byte(CardanoWasm.BigNum.from_str(data.coins_per_utxo_word))
+			.build();
+	} catch (error) {
+		console.error('Error fetching protocol parameters:', error);
+		throw error;
+	}
+}
+
+
+
+})();
+
+// トランザクションのハッシュをSHA3-256で計算する
+function getTransactionHashes(transactions) {
+	return transactions.map(tx => {
+		const hash = sha3_256(new TextEncoder().encode(tx));
+		return Array.from(hash).map(b => b.toString(16).padStart(2, '0')).join('');
+	});
+}
+
+
+function downloadData(data,filename){
+
+	const blob = new Blob([data], {type: 'application/json'});
+	const url = URL.createObjectURL(blob);
+	const anchor = document.createElement('a');
+	anchor.setAttribute('download', filename);
+	anchor.setAttribute('href', url);
+	anchor.click();
+	URL.revokeObjectURL(url);
+}
+
+
+
+// マークルツリーを構築する
+function buildMerkleTree(hashes) {
+	let tree = [hashes];
+
+	while (tree[tree.length - 1].length > 1) {
+		let currentLevel = tree[tree.length - 1];
+		let nextLevel = [];
+
+		for (let i = 0; i < currentLevel.length; i += 2) {
+			const left = currentLevel[i];
+			const right = i + 1 < currentLevel.length ? currentLevel[i + 1] : left;
+			nextLevel.push(hashConcat(left, right));
+		}
+		tree.push(nextLevel);
+	}
+	return tree;
+}
+
+// マークルツリーパスを見つける関数
+function findPath(tree, targetHash) {
+	let path = [];
+	let currentHash = targetHash;
+
+	for (let level = 0; level < tree.length - 1; level++) {
+		const currentLevel = tree[level];
+		for (let i = 0; i < currentLevel.length; i += 2) {
+			const left = currentLevel[i];
+			const right = i + 1 < currentLevel.length ? currentLevel[i + 1] : left;
+			const combinedHash = hashConcat(left, right);
+
+			if (left === currentHash || right === currentHash) {
+				path.push({
+					position: left === currentHash ? 'left' : 'right',
+					hash: left === currentHash ? right : left
+				});
+				currentHash = combinedHash;
+				break;
+			}
+		}
+	}
+	return path;
+}
+
+
+// マークルパスの検証ロジック
+function verifyMerklePath(leafHash, path, expectedRoot) {
+	let currentHash = leafHash;
+
+	for (let node of path) {
+		if (node.position === 'left') {
+			currentHash = hashConcat(currentHash, node.hash);  // 左側にある場合
+		} else if (node.position === 'right') {
+			currentHash = hashConcat(node.hash, currentHash);  // 右側にある場合
+		} else {
+			console.error(`Unknown position ${node.position}`);
+			return false;
+		}
+	}
+
+	return currentHash === expectedRoot;
+}
+
+// 2つのハッシュを結合してSHA3-256でハッシュ化する
+function hashConcat(left, right) {
+	const combined = new TextEncoder().encode(left + right);
+	const hash = sha3_256(combined);
+	return Array.from(hash).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+
+
+</script>
+</body>
+</html>
