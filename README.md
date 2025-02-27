@@ -13,7 +13,7 @@ Catalyst Fund12 #1200231 Milestones
 #### 1-pg : Certificate issuing tool (project and source code)
  [ ■Source Link of 1-pg ](./DocumentM2/M2_Develop_src_1_Certificate_issuing_tool)  
 #### 1-v : Certificate issuing tool (video)
- [ ■Video Link of 1-v ](YouTube https://youtu.be/XDs8gRNE9P4)   
+ ■Video Link of 1-v (YouTube https://youtu.be/XDs8gRNE9P4)   
 #### 2-a : Certificate IPDC transmission support tool (software specifications)
  [ ■PDF Link of 2-a ](./DocumentM2/M2_Develop_eng_04_D2a_sw.pdf)  
 #### 2-b : Certificate IPDC transmission support tool (interface specifications and so on)
@@ -23,7 +23,7 @@ Catalyst Fund12 #1200231 Milestones
 #### 2-pg : Certificate IPDC transmission support tool (project and source code)
  [ ■Source Link of 2-pg ](./DocumentM2/M2_Develop_src_2_Certificate_IPDC_transmission_support_tool)  
 #### 2-v : Certificate IPDC transmission support tool (video)
- [ ■Video Link of 2-v ](YouTube https://youtu.be/BFlvswwGBWk)   
+ ■Video Link of 2-v (YouTube https://youtu.be/BFlvswwGBWk)   
  
   
 =====  
