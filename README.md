@@ -16,6 +16,8 @@ Catalyst Fund12 #1200231 Milestones
  [ ■Source Link of 1-pg ](./DocumentM3/M3_Develop_src_Certificate_validation_tool)  
 #### 1-v : Certificate validation tool (video)
  [ ■Video Link of 1-v (https://youtu.be/tLvWq189qTo)](https://youtu.be/tLvWq189qTo)   
+#### 1-v2 : validation.html (video2)
+ [ ■Video Link of 1-v (https://youtu.be/VHkpyQr9CJs)](https://youtu.be/VHkpyQr9CJs)   
 
   
 =====  
